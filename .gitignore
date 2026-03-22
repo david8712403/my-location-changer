@@ -1,0 +1,9 @@
+node_modules/
+dist/
+python/venv/
+.env
+*.pyc
+__pycache__/
+.DS_Store
+test_images
+.sisyphus
