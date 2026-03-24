@@ -7,6 +7,7 @@ import type { SimStatus } from './components/PlaybackControls'
 import type { PlaybackDirection } from './components/PlaybackControls'
 import SpeedSlider from './components/SpeedSlider'
 import StatusBar from './components/StatusBar'
+import PlatformSwitcher from './components/PlatformSwitcher'
 import ErrorToast from './components/ErrorToast'
 import type { Waypoint } from './components/MapView'
 import './App.css'
@@ -47,6 +48,8 @@ export default function App() {
   const [fitRouteTrigger, setFitRouteTrigger] = useState(0)
   const [followLocked, setFollowLocked] = useState(true)
   const [playbackDirection, setPlaybackDirection] = useState<PlaybackDirection>('forward')
+  const [platform, setPlatform] = useState<'ios' | 'android'>('ios')
+  const [deviceConnected, setDeviceConnected] = useState(false)
   const planningRef = useRef(false)
 
   const handleMapModeChange = useCallback((nextMode: MapMode) => {
@@ -277,7 +280,7 @@ export default function App() {
   )
 
   const handleTeleport = useCallback(async (wp: Waypoint) => {
-    const res = await fetch('/api/simulate/teleport', {
+    const res = await fetch(`/api/simulate/teleport?platform=${platform}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lat: wp.lat, lon: wp.lon }),
@@ -289,7 +292,7 @@ export default function App() {
     }
     setSimStatus((prev) => ({ ...prev, currentLat: wp.lat, currentLon: wp.lon }))
     setFollowLocked(true)
-  }, [])
+  }, [platform])
 
   const handleStartNavigation = useCallback(async () => {
     try {
@@ -331,12 +334,35 @@ export default function App() {
     }
   }, [sendSimulationCommand, speedKmh])
 
+  const handlePlatformChange = useCallback(async (newPlatform: 'ios' | 'android') => {
+    if (newPlatform === platform) return
+    if (simStatus.state !== 'idle') {
+      // clear active simulation on the old platform
+      await fetch(`/api/simulate/clear?platform=${platform}`, { method: 'POST' }).catch(() => {})
+      setSimStatus(IDLE_STATUS)
+    }
+    setPlatform(newPlatform)
+    setWaypoints([])
+    setNavigationMarkers([])
+    setNavigationSegments([])
+    setActiveRouteId(null)
+  }, [platform, simStatus.state])
+
   const canStartNavigation = waypoints.length >= 2 && simStatus.state === 'idle'
 
   return (
     <div data-testid="app-root" className="app-shell">
       <ErrorToast message={errorMessage} onDismiss={() => setErrorMessage(null)} />
       <aside className="app-sidebar">
+        <section className="app-card app-card-compact">
+          <PlatformSwitcher
+            value={platform}
+            onChange={(p) => { void handlePlatformChange(p) }}
+            iosConnected={platform === 'ios' && deviceConnected}
+            androidConnected={platform === 'android' && deviceConnected}
+          />
+        </section>
+
         <section className="app-card app-card-compact">
           <label className="app-field-label">Map Mode</label>
           <div className="app-tab-switch" role="tablist" aria-label="Map mode tabs">
@@ -346,7 +372,13 @@ export default function App() {
               className={`app-tab-btn ${mapMode === 'draw' ? 'is-active' : ''}`}
               onClick={() => handleMapModeChange('draw')}
             >
-              Draw
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                aria-hidden="true">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+              <span className="app-tab-label">Draw</span>
             </button>
             <button
               role="tab"
@@ -354,7 +386,17 @@ export default function App() {
               className={`app-tab-btn ${mapMode === 'teleport' ? 'is-active' : ''}`}
               onClick={() => handleMapModeChange('teleport')}
             >
-              Teleport
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/>
+                <circle cx="12" cy="12" r="3"/>
+                <line x1="12" y1="2" x2="12" y2="5"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+                <line x1="2" y1="12" x2="5" y2="12"/>
+                <line x1="19" y1="12" x2="22" y2="12"/>
+              </svg>
+              <span className="app-tab-label">Teleport</span>
             </button>
             <button
               role="tab"
@@ -362,7 +404,12 @@ export default function App() {
               className={`app-tab-btn ${mapMode === 'navigation' ? 'is-active' : ''}`}
               onClick={() => handleMapModeChange('navigation')}
             >
-              Navigation
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                aria-hidden="true">
+                <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+              </svg>
+              <span className="app-tab-label">Navigate</span>
             </button>
           </div>
         </section>
@@ -481,7 +528,7 @@ export default function App() {
         )}
 
         <section className="app-card app-card-compact">
-          <StatusBar simStatus={simStatus} onError={setErrorMessage} />
+          <StatusBar simStatus={simStatus} onError={setErrorMessage} platform={platform} onConnectionChange={setDeviceConnected} />
         </section>
       </aside>
 

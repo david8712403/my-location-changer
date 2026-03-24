@@ -50,3 +50,25 @@ Open http://localhost:5173 in your browser. The server runs on port 3001.
 - The `clear` command may occasionally leave a simulated location on the device; use the **Clear Device Location** button as a workaround
 - Only **USB connection** is supported (no WiFi)
 - Requires macOS — pymobiledevice3's USB stack does not work on Linux or Windows for this use case
+
+## Android Prerequisites
+
+Android GPS simulation requires a real Android device (API 31 / Android 12 or later) connected via USB with ADB.
+
+1. **Install Android SDK Platform-Tools** — download from [developer.android.com/tools/releases/platform-tools](https://developer.android.com/tools/releases/platform-tools) and add `adb` to your PATH (or set the `ANDROID_HOME` environment variable to the SDK root)
+2. **Enable Developer Options** on your device: Settings → About Phone → tap **Build Number** 7 times
+3. **Enable USB Debugging**: Developer Options → USB Debugging → ON
+4. **Connect your device via USB** and run `adb devices` — authorize the RSA fingerprint prompt on your device
+5. **Verify connectivity**: `adb devices` should show your device with state `device` (not `unauthorized` or `offline`)
+6. **Minimum Android version**: Android 12 (API level 31) — earlier versions are not supported
+
+## Android Usage
+
+1. Select **Android** in the platform switcher at the top of the sidebar
+2. The StatusBar shows ADB connection status, API level, and device serial number
+3. Use **Teleport** mode to instantly set a GPS location on your Android device
+4. Use **Navigate** mode to simulate route playback (the device location updates at ≤2 Hz)
+5. Use the **Clear Device Location** button to remove the simulated location from the device
+6. Switching back to iOS automatically clears the Android simulated location
+
+> **Note**: The app uses the `cmd location` test-provider API (Android 12+) — not `adb emu geo fix` (emulator-only) or mock location settings. No companion app is required.

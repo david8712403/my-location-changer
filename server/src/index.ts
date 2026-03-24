@@ -3,7 +3,8 @@ import cors from 'cors'
 import routesRouter from './routesRouter'
 import simulationRouter from './simulationRouter'
 import deviceRouter from './deviceRouter'
-import { bridge, engine } from './singletons'
+import { getBridge, engine } from './singletons'
+import { RealPythonBridge } from './pythonBridge'
 
 const app = express()
 app.use(cors())
@@ -21,7 +22,8 @@ const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   process.stdout.write(`Server running on port ${PORT}\n`)
 
-  bridge.start().catch((err: unknown) => {
+  const iosBridge = getBridge('ios') as RealPythonBridge
+  iosBridge.start().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err)
     process.stderr.write(
       `\u26a0\ufe0f  Python bridge failed to start: ${message}\n` +
@@ -34,7 +36,7 @@ const shutdown = async () => {
   if (engine.getStatus().state !== 'idle') {
     await engine.stop()
   }
-  await bridge.stop()
+  await (getBridge('ios') as RealPythonBridge).stop()
   process.exit(0)
 }
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { engine, bridge } from './singletons'
+import { engine, getBridge, Platform } from './singletons'
 import { getRoute } from './routeStorage'
 import { interpolateRoute } from './interpolation'
 
@@ -228,8 +228,16 @@ router.get('/status', (_req: Request, res: Response) => {
   res.json(engine.getStatus())
 })
 
-router.post('/clear', async (_req: Request, res: Response) => {
+router.post('/clear', async (req: Request, res: Response) => {
+  const rawPlatform = req.query.platform ?? (req.body as Record<string, unknown>)?.platform
+  const platform: Platform | null =
+    rawPlatform === undefined ? 'ios' : rawPlatform === 'ios' ? 'ios' : rawPlatform === 'android' ? 'android' : null
+  if (!platform) {
+    res.status(400).json({ error: 'Invalid platform. Must be ios or android' })
+    return
+  }
   try {
+    const bridge = getBridge(platform)
     if (engine.getStatus().state !== 'idle') {
       await engine.stop()
     }
@@ -271,13 +279,20 @@ router.patch('/speed', (req: Request, res: Response) => {
 })
 
 router.post('/teleport', async (req: Request, res: Response) => {
+  const rawPlatform = req.query.platform ?? (req.body as Record<string, unknown>)?.platform
+  const platform: Platform | null =
+    rawPlatform === undefined ? 'ios' : rawPlatform === 'ios' ? 'ios' : rawPlatform === 'android' ? 'android' : null
+  if (!platform) {
+    res.status(400).json({ error: 'Invalid platform. Must be ios or android' })
+    return
+  }
   const { lat, lon } = req.body
   if (typeof lat !== 'number' || typeof lon !== 'number') {
     res.status(400).json({ error: 'lat and lon must be numbers' })
     return
   }
   try {
-    await bridge.setLocation(lat, lon)
+    await getBridge(platform).setLocation(lat, lon)
     engine.rememberLocation(lat, lon)
     res.json({ ok: true, lat, lon })
   } catch (err) {

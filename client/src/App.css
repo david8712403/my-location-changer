@@ -103,6 +103,12 @@
 }
 
 .app-tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 44px;
   border: 1px solid #cbd5e1;
   border-radius: 9px;
   padding: 8px 6px;
@@ -124,6 +130,12 @@
   background: #e0ecff;
   color: #1e3a8a;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+}
+
+.app-tab-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .app-mode-switch {
@@ -484,4 +496,75 @@
   .app-map-panel {
     min-height: 48dvh;
   }
+}
+
+/* ── PlatformSwitcher ─────────────────────────────── */
+
+.platform-switcher {
+  display: flex;
+  gap: 8px;
+  padding: 4px;
+  background: var(--gray-100);
+  border-radius: 10px;
+}
+
+.platform-switcher__btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1.5px solid var(--panel-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+
+.platform-switcher__btn:hover:not(.platform-switcher__btn--active) {
+  background: var(--panel-bg);
+  border-color: var(--gray-300);
+}
+
+.platform-switcher__btn--active {
+  background: var(--blue-500);
+  color: #fff;
+  border-color: var(--blue-500);
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.25);
+}
+
+.platform-switcher__icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.platform-switcher__label {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.platform-switcher__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gray-300);
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.platform-switcher__dot--connected {
+  background: var(--green-600);
+  box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.18);
+}
+
+/* ── Android StatusBar ── */
+.status-bar__api-warn {
+  color: var(--red-600);
+  font-size: 0.78rem;
 }
