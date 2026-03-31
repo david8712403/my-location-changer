@@ -21,6 +21,132 @@ const IDLE_STATUS: SimStatus = {
   currentLon: null,
 }
 
+const ETA_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+interface ReverseGeocodeResponse {
+  name?: string
+  display_name?: string
+  address?: {
+    road?: string
+    neighbourhood?: string
+    suburb?: string
+    city?: string
+    town?: string
+    village?: string
+    state?: string
+    country?: string
+  }
+}
+
+function formatRemainingDuration(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, totalSeconds)
+  const minutes = Math.floor(safeSeconds / 60)
+  const seconds = safeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}分${String(seconds).padStart(2, '0')}秒`
+}
+
+function formatArrivalTime(timestamp: number): string {
+  return ETA_TIME_FORMATTER.format(new Date(timestamp))
+}
+
+function formatCoordinateFallback(lat: number, lon: number): string {
+  return `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+}
+
+function buildAddressSummary(payload: ReverseGeocodeResponse): string | null {
+  const address = payload.address
+  const candidates = [
+    payload.name,
+    address?.road,
+    address?.neighbourhood,
+    address?.suburb,
+    address?.city,
+    address?.town,
+    address?.village,
+  ]
+
+  const uniqueParts = candidates.filter((value, index, array): value is string => {
+    if (typeof value !== 'string') return false
+    const trimmed = value.trim()
+    if (!trimmed) return false
+    return array.findIndex((item) => item?.trim() === trimmed) === index
+  })
+
+  if (uniqueParts.length > 0) {
+    return uniqueParts.slice(0, 3).join(' · ')
+  }
+
+  if (typeof payload.display_name === 'string' && payload.display_name.trim()) {
+    return payload.display_name.split(',').map((part) => part.trim()).filter(Boolean).slice(0, 3).join(' · ')
+  }
+
+  return null
+}
+
+async function fetchAddressSummary(lat: number, lon: number): Promise<string> {
+  const url = new URL('https://nominatim.openstreetmap.org/reverse')
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('lat', String(lat))
+  url.searchParams.set('lon', String(lon))
+  url.searchParams.set('zoom', '16')
+  url.searchParams.set('addressdetails', '1')
+
+  if (typeof navigator !== 'undefined' && navigator.language) {
+    url.searchParams.set('accept-language', navigator.language)
+  }
+
+  const res = await fetch(url.toString(), {
+    headers: { Accept: 'application/json' },
+  })
+
+  if (!res.ok) {
+    throw new Error(`Reverse geocoding failed: ${res.status}`)
+  }
+
+  const payload = (await res.json()) as ReverseGeocodeResponse
+  return buildAddressSummary(payload) ?? formatCoordinateFallback(lat, lon)
+}
+
+async function showNavigationCompleteNotification(lat: number | null | undefined, lon: number | null | undefined): Promise<void> {
+  if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+    return
+  }
+
+  const destinationLabel =
+    typeof lat === 'number' && typeof lon === 'number'
+      ? await fetchAddressSummary(lat, lon).catch(() => formatCoordinateFallback(lat, lon))
+      : '目的地附近'
+
+  try {
+    const notification = new Notification('導航完成', {
+      body: `已抵達：${destinationLabel}`,
+    })
+    window.setTimeout(() => notification.close(), 8000)
+  } catch {
+    return
+  }
+}
+
+async function ensureNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'unsupported'
+  }
+
+  if (Notification.permission !== 'default') {
+    return Notification.permission
+  }
+
+  try {
+    return await Notification.requestPermission()
+  } catch {
+    return Notification.permission
+  }
+}
+
 function mergeNavigationSegments(segments: Waypoint[][]): Waypoint[] {
   if (segments.length === 0) return []
   const merged: Waypoint[] = []
@@ -51,6 +177,7 @@ export default function App() {
   const [platform, setPlatform] = useState<'ios' | 'android'>('ios')
   const [deviceConnected, setDeviceConnected] = useState(false)
   const planningRef = useRef(false)
+  const previousSimStatusRef = useRef<SimStatus>(IDLE_STATUS)
 
   const handleMapModeChange = useCallback((nextMode: MapMode) => {
     setMapMode(nextMode)
@@ -87,6 +214,28 @@ export default function App() {
       clearInterval(interval)
     }
   }, [])
+
+  useEffect(() => {
+    const previousStatus = previousSimStatusRef.current
+    const navigationJustCompleted =
+      previousStatus.routeId === 'navigation' &&
+      previousStatus.state !== 'idle' &&
+      simStatus.routeId === 'navigation' &&
+      simStatus.state === 'idle' &&
+      simStatus.totalPoints > 0 &&
+      simStatus.currentIndex >= simStatus.totalPoints
+
+    if (
+      navigationJustCompleted &&
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'granted'
+    ) {
+      void showNavigationCompleteNotification(simStatus.currentLat, simStatus.currentLon)
+    }
+
+    previousSimStatusRef.current = simStatus
+  }, [simStatus])
 
   const sendSimulationCommand = useCallback(
     async (endpoint: string, body?: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST') => {
@@ -296,6 +445,7 @@ export default function App() {
 
   const handleStartNavigation = useCallback(async () => {
     try {
+      await ensureNotificationPermission()
       await sendSimulationCommand('/api/simulate/navigate', { waypoints, speedKmh })
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to start navigation')
@@ -349,6 +499,16 @@ export default function App() {
   }, [platform, simStatus.state])
 
   const canStartNavigation = waypoints.length >= 2 && simStatus.state === 'idle'
+  const navigationRemainingSeconds = Math.max(simStatus.totalPoints - simStatus.currentIndex, 0)
+  const navigationEta =
+    simStatus.routeId === 'navigation' &&
+    (simStatus.state === 'playing' || simStatus.state === 'paused') &&
+    simStatus.totalPoints > 0
+      ? {
+          remainingLabel: formatRemainingDuration(navigationRemainingSeconds),
+          arrivalLabel: formatArrivalTime(Date.now() + navigationRemainingSeconds * 1000),
+        }
+      : null
 
   return (
     <div data-testid="app-root" className="app-shell">
@@ -465,6 +625,20 @@ export default function App() {
             <div style={{ fontSize: 12, color: '#475569', marginBottom: 8 }}>
               Checkpoints: <strong>{navigationMarkers.length}</strong>
             </div>
+
+            {navigationEta && (
+              <div className="navigation-eta-card">
+                <div className="navigation-eta-title">行程進行中</div>
+                <div className="navigation-eta-row">
+                  <span>剩餘時間</span>
+                  <strong>{navigationEta.remainingLabel}</strong>
+                </div>
+                <div className="navigation-eta-row">
+                  <span>預計抵達時間</span>
+                  <strong>{navigationEta.arrivalLabel}</strong>
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
               {simStatus.state === 'idle' && (

@@ -95,6 +95,36 @@
   overflow-wrap: anywhere;
 }
 
+.navigation-eta-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+}
+
+.navigation-eta-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #1d4ed8;
+}
+
+.navigation-eta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.navigation-eta-row strong {
+  color: #0f172a;
+}
+
 .app-tab-switch {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
