@@ -60,21 +60,24 @@ function formatCoordinateFallback(lat: number, lon: number): string {
 function buildAddressSummary(payload: ReverseGeocodeResponse): string | null {
   const address = payload.address
   const candidates = [
-    payload.name,
     address?.road,
     address?.neighbourhood,
     address?.suburb,
     address?.city,
     address?.town,
     address?.village,
+    payload.name,
   ]
 
-  const uniqueParts = candidates.filter((value, index, array): value is string => {
-    if (typeof value !== 'string') return false
+  const seen = new Set<string>()
+  const uniqueParts = candidates.reduce<string[]>((parts, value) => {
+    if (typeof value !== 'string') return parts
     const trimmed = value.trim()
-    if (!trimmed) return false
-    return array.findIndex((item) => item?.trim() === trimmed) === index
-  })
+    if (!trimmed || seen.has(trimmed)) return parts
+    seen.add(trimmed)
+    parts.push(trimmed)
+    return parts
+  }, [])
 
   if (uniqueParts.length > 0) {
     return uniqueParts.slice(0, 3).join(' · ')
@@ -87,7 +90,7 @@ function buildAddressSummary(payload: ReverseGeocodeResponse): string | null {
   return null
 }
 
-async function fetchAddressSummary(lat: number, lon: number): Promise<string> {
+async function fetchAddressSummary(lat: number, lon: number, timeoutMs = 1500): Promise<string> {
   const url = new URL('https://nominatim.openstreetmap.org/reverse')
   url.searchParams.set('format', 'jsonv2')
   url.searchParams.set('lat', String(lat))
@@ -95,20 +98,28 @@ async function fetchAddressSummary(lat: number, lon: number): Promise<string> {
   url.searchParams.set('zoom', '16')
   url.searchParams.set('addressdetails', '1')
 
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
   if (typeof navigator !== 'undefined' && navigator.language) {
     url.searchParams.set('accept-language', navigator.language)
   }
 
-  const res = await fetch(url.toString(), {
-    headers: { Accept: 'application/json' },
-  })
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
 
-  if (!res.ok) {
-    throw new Error(`Reverse geocoding failed: ${res.status}`)
+    if (!res.ok) {
+      throw new Error(`Reverse geocoding failed: ${res.status}`)
+    }
+
+    const payload = (await res.json()) as ReverseGeocodeResponse
+    return buildAddressSummary(payload) ?? formatCoordinateFallback(lat, lon)
+  } finally {
+    window.clearTimeout(timeoutId)
   }
-
-  const payload = (await res.json()) as ReverseGeocodeResponse
-  return buildAddressSummary(payload) ?? formatCoordinateFallback(lat, lon)
 }
 
 async function showNavigationCompleteNotification(lat: number | null | undefined, lon: number | null | undefined): Promise<void> {
@@ -220,10 +231,7 @@ export default function App() {
     const navigationJustCompleted =
       previousStatus.routeId === 'navigation' &&
       previousStatus.state !== 'idle' &&
-      simStatus.routeId === 'navigation' &&
-      simStatus.state === 'idle' &&
-      simStatus.totalPoints > 0 &&
-      simStatus.currentIndex >= simStatus.totalPoints
+      simStatus.state === 'idle'
 
     if (
       navigationJustCompleted &&
@@ -231,7 +239,10 @@ export default function App() {
       'Notification' in window &&
       Notification.permission === 'granted'
     ) {
-      void showNavigationCompleteNotification(simStatus.currentLat, simStatus.currentLon)
+      void showNavigationCompleteNotification(
+        simStatus.currentLat ?? previousStatus.currentLat,
+        simStatus.currentLon ?? previousStatus.currentLon,
+      )
     }
 
     previousSimStatusRef.current = simStatus
